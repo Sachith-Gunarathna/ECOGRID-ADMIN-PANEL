@@ -1,0 +1,127 @@
+// server.js — EcoGrid Admin Panel Backend
+// Node.js + Express + Firebase Admin SDK
+
+require('dotenv').config();
+const express    = require('express');
+const cors       = require('cors');
+const helmet     = require('helmet');
+const morgan     = require('morgan');
+const rateLimit  = require('express-rate-limit');
+const path       = require('path');
+
+const app  = express();
+const PORT = process.env.PORT || 3000;
+
+// ─────────────────────────────────────────
+// Security & Middleware
+// ─────────────────────────────────────────
+// CSP disabled — admin panel uses inline onclick handlers + external Firebase/CDN scripts.
+// This is an internal admin tool (localhost), so CSP is not needed.
+app.use(helmet({
+  contentSecurityPolicy:     false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(morgan('dev'));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// CORS
+app.use(cors({
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:5173',
+    'https://ecogrid-admin.web.app',
+  ],
+  methods:      ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials:  true,
+}));
+
+// Rate limiting
+app.use('/api/', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      300,
+  message:  { success: false, message: 'Too many requests.' },
+}));
+
+// ─────────────────────────────────────────
+// Serve admin panel HTML + inject Firebase config
+// ─────────────────────────────────────────
+const fs = require('fs');
+
+// Inject Firebase Web API Key from .env so the browser can auto-init
+app.get('/', (req, res) => {
+  let html = fs.readFileSync(path.join(__dirname, 'admin-panel.html'), 'utf8');
+
+  // Build the config object and Base64-encode it so raw keys are NOT
+  // visible in "View Page Source". The client decodes it at runtime.
+  const configObj = {
+    apiKey:        process.env.FIREBASE_WEB_API_KEY || '',
+    mapsApiKey:    process.env.GOOGLE_MAPS_API_KEY || process.env.FIREBASE_WEB_API_KEY || '',
+    projectId:     process.env.FIREBASE_PROJECT_ID || '',
+    dbUrl:         process.env.FIREBASE_DATABASE_URL || '',
+    storageBucket: process.env.FIREBASE_PROJECT_ID ? process.env.FIREBASE_PROJECT_ID + '.firebasestorage.app' : '',
+  };
+  const encoded = Buffer.from(JSON.stringify(configObj)).toString('base64');
+
+  const inject = `
+  <script>
+    // Config is encoded — decoded at runtime only
+    (function(){
+      try {
+        var _d = JSON.parse(atob("${encoded}"));
+        window.ECOGRID_SERVER_CONFIG = _d;
+      } catch(e) {
+        window.ECOGRID_SERVER_CONFIG = {};
+      }
+    })();
+  </script>`;
+
+  html = html.replace('</head>', inject + '\n</head>');
+  res.send(html);
+});
+
+app.use(express.static(path.join(__dirname)));
+
+// ─────────────────────────────────────────
+// API Routes
+// ─────────────────────────────────────────
+app.use('/api/dashboard',    require('./routes/dashboard'));
+app.use('/api/stations',     require('./routes/stations'));
+app.use('/api/users',        require('./routes/users'));
+app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/vehicles',     require('./routes/vehicles'));
+app.use('/api/sessions',     require('./routes/sessions'));
+app.use('/api/notifications', require('./routes/notifications'));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', project: 'EcoGrid Admin', firebase: process.env.FIREBASE_PROJECT_ID, time: new Date().toISOString() });
+});
+
+// 404
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+});
+
+// ─────────────────────────────────────────
+// Start
+// ─────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`
+╔══════════════════════════════════════════╗
+║  ⚡ EcoGrid Admin Backend                ║
+║  http://localhost:${PORT}                     ║
+║  Firebase: ${(process.env.FIREBASE_PROJECT_ID || 'not configured').padEnd(30)}║
+╚══════════════════════════════════════════╝
+  `);
+});
+
+module.exports = app;

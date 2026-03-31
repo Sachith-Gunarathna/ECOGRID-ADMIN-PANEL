@@ -1,0 +1,205 @@
+// routes/users.js
+// User management — Firebase Auth + Firestore 'users' collection
+// Matches User.java: uid, name, email, otp, phoneNumber, otpTime, isVerified, profilePicUrl, profileBannerUrl
+
+const express = require('express');
+const router  = express.Router();
+const { db, auth } = require('../config/firebase');
+const { verifyToken } = require('../middleware/auth');
+
+const COLLECTION = 'users';
+
+// GET /api/users — paginated list
+router.get('/', verifyToken, async (req, res) => {
+  try {
+    const { limit = 50, lastDoc, verified } = req.query;
+
+    let query = db.collection(COLLECTION).orderBy('name');
+    if (verified !== undefined)
+      query = query.where('isVerified', '==', verified === 'true');
+    if (lastDoc) {
+      const last = await db.collection(COLLECTION).doc(lastDoc).get();
+      query = query.startAfter(last);
+    }
+    query = query.limit(parseInt(limit));
+
+    const snapshot = await query.get();
+    const users    = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Enrich with Firebase Auth data
+    const enriched = await Promise.all(
+      users.map(async (user) => {
+        try {
+          const authUser = await auth.getUser(user.uid || user.id);
+          return {
+            ...user,
+            disabled:      authUser.disabled,
+            emailVerified: authUser.emailVerified,
+            lastSignIn:    authUser.metadata.lastSignInTime,
+            createdAt:     authUser.metadata.creationTime,
+          };
+        } catch {
+          return user;
+        }
+      })
+    );
+
+    res.json({ success: true, data: enriched, count: enriched.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/users/stats
+router.get('/stats', verifyToken, async (req, res) => {
+  try {
+    const [usersSnap, vehiclesSnap, invoicesSnap] = await Promise.all([
+      db.collection(COLLECTION).get(),
+      db.collection('vehicles').get(),
+      db.collection('invoices').get(),
+    ]);
+
+    const users = usersSnap.docs.map(d => d.data());
+    const totalRevenue = invoicesSnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers:    users.length,
+        verifiedUsers: users.filter(u => u.isVerified).length,
+        totalVehicles: vehiclesSnap.size,
+        totalRevenue:  Math.round(totalRevenue * 100) / 100,
+        totalSessions: invoicesSnap.size,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
+// POST /api/users/create — create new user from admin panel
+router.post('/create', verifyToken, async (req, res) => {
+  try {
+    const { name, email, password, phoneNumber, isVerified, isAdmin } = req.body;
+
+    if (!name || !email || !password)
+      return res.status(400).json({ success: false, message: 'name, email and password are required' });
+    if (password.length < 6)
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+
+    // Create Firebase Auth user
+    const userRecord = await auth.createUser({
+      email,
+      password,
+      displayName:   name,
+      emailVerified: Boolean(isVerified),
+    });
+
+    // Set admin claim if requested
+    if (isAdmin) {
+      await auth.setCustomUserClaims(userRecord.uid, { admin: true });
+    }
+
+    // Create Firestore user document (matches User.java model)
+    const userData = {
+      uid:          userRecord.uid,
+      name,
+      email,
+      phoneNumber:  phoneNumber || '',
+      isVerified:   Boolean(isVerified),
+      profilePicUrl:    '',
+      profileBannerUrl: '',
+      otp:          '',
+      otpTime:      0,
+      createdAt:    new Date().toISOString(),
+      updatedAt:    new Date().toISOString(),
+      createdBy:    'admin',
+    };
+
+    await db.collection(COLLECTION).doc(userRecord.uid).set(userData);
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      data:    { uid: userRecord.uid, ...userData },
+    });
+  } catch (error) {
+    // Handle duplicate email
+    if (error.code === 'auth/email-already-exists')
+      return res.status(409).json({ success: false, message: 'Email already in use' });
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/users/:uid — single user with vehicles + invoices
+router.get('/:uid', verifyToken, async (req, res) => {
+  try {
+    const doc = await db.collection(COLLECTION).doc(req.params.uid).get();
+    if (!doc.exists)
+      return res.status(404).json({ success: false, message: 'User not found' });
+
+    const userData = { id: doc.id, ...doc.data() };
+
+    const [vehiclesSnap, invoicesSnap] = await Promise.all([
+      db.collection('vehicles').where('user_id', '==', req.params.uid).get(),
+      db.collection('invoices').where('uId', '==', req.params.uid).orderBy('createdAt', 'desc').limit(20).get(),
+    ]);
+
+    userData.vehicles   = vehiclesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    userData.invoices   = invoicesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    userData.totalSpent = invoicesSnap.docs.reduce((s, d) => s + (d.data().amount || 0), 0);
+
+    res.json({ success: true, data: userData });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PATCH /api/users/:uid/verify
+router.patch('/:uid/verify', verifyToken, async (req, res) => {
+  try {
+    await db.collection(COLLECTION).doc(req.params.uid).update({
+      isVerified: true,
+      updatedAt:  new Date().toISOString(),
+    });
+    res.json({ success: true, message: 'User verified' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PATCH /api/users/:uid/disable
+router.patch('/:uid/disable', verifyToken, async (req, res) => {
+  try {
+    const { disabled } = req.body;
+    await auth.updateUser(req.params.uid, { disabled: Boolean(disabled) });
+    res.json({ success: true, message: `User ${disabled ? 'disabled' : 'enabled'}` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/users/:uid/admin — grant/revoke admin custom claim
+router.post('/:uid/admin', verifyToken, async (req, res) => {
+  try {
+    const { isAdmin } = req.body;
+    await auth.setCustomUserClaims(req.params.uid, { admin: Boolean(isAdmin) });
+    res.json({ success: true, message: `Admin claim ${isAdmin ? 'granted' : 'revoked'}` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/users/:uid — remove from Auth + Firestore
+router.delete('/:uid', verifyToken, async (req, res) => {
+  try {
+    await auth.deleteUser(req.params.uid);
+    await db.collection(COLLECTION).doc(req.params.uid).delete();
+    res.json({ success: true, message: 'User deleted from Auth and Firestore' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+module.exports = router;
