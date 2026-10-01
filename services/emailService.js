@@ -1,116 +1,1 @@
-// services/emailService.js
-// Nodemailer invoice email service for EcoGrid
-// Replaces the nexcentauri.com API call in PaymentConfirmationActivity.java
-
-const nodemailer = require('nodemailer');
-
-let transporter;
-
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransporter({
-      host:   process.env.SMTP_HOST || 'smtp.gmail.com',
-      port:   parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-  return transporter;
-}
-
-const sendInvoiceEmail = async ({ email, transactionId, amount, date, stationId, vehicle }) => {
-  const mailer = getTransporter();
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <style>
-        body{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;margin:0;padding:0}
-        .wrapper{max-width:560px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}
-        .header{background:linear-gradient(135deg,#16a34a,#065f46);padding:32px 40px;text-align:center}
-        .bolt{font-size:32px}
-        .brand{color:white;font-size:24px;font-weight:800}
-        .header p{color:rgba(255,255,255,.75);margin:8px 0 0;font-size:14px}
-        .body{padding:36px 40px}
-        .title{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:6px}
-        .subtitle{color:#64748b;font-size:14px;margin-bottom:28px}
-        .invoice-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px}
-        .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2e8f0}
-        .row:last-child{border-bottom:none;padding-top:14px}
-        .label{color:#64748b;font-size:13px}
-        .value{color:#0f172a;font-weight:600;font-size:13px}
-        .amount-val{color:#16a34a;font-size:20px;font-weight:800}
-        .badge{display:inline-flex;align-items:center;gap:6px;background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:24px}
-        .co2{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 20px;text-align:center;margin-bottom:20px}
-        .co2 .leaf{font-size:24px}
-        .co2 p{margin:4px 0 0;color:#15803d;font-size:13px;font-weight:500}
-        .footer{padding:20px 40px;background:#f8fafc;text-align:center;color:#94a3b8;font-size:12px;border-top:1px solid #e2e8f0}
-        .footer a{color:#16a34a;text-decoration:none}
-      </style>
-    </head>
-    <body>
-      <div class="wrapper">
-        <div class="header">
-          <div class="bolt">⚡</div>
-          <div class="brand">EcoGrid</div>
-          <p>EV Charging Receipt</p>
-        </div>
-        <div class="body">
-          <div class="badge">✓ Payment Successful</div>
-          <div class="title">Thank you for charging with EcoGrid!</div>
-          <div class="subtitle">Here's your invoice for this charging session.</div>
-          <div class="invoice-box">
-            <div class="row">
-              <span class="label">Transaction ID</span>
-              <span class="value" style="font-family:monospace;font-size:12px">${transactionId}</span>
-            </div>
-            <div class="row">
-              <span class="label">Station Node</span>
-              <span class="value">${stationId}</span>
-            </div>
-            <div class="row">
-              <span class="label">Vehicle</span>
-              <span class="value">${vehicle || 'N/A'}</span>
-            </div>
-            <div class="row">
-              <span class="label">Date &amp; Time</span>
-              <span class="value">${date}</span>
-            </div>
-            <div class="row">
-              <span class="label" style="font-weight:700;color:#0f172a">Total Charged</span>
-              <span class="amount-val">LKR ${parseFloat(amount).toLocaleString('en-LK', { minimumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-          <div class="co2">
-            <div class="leaf">🌿</div>
-            <p>Every kWh charged saves ~0.85 kg of CO₂ vs petrol vehicles.<br>Thank you for choosing clean energy!</p>
-          </div>
-          <p style="color:#64748b;font-size:13px;line-height:1.6">
-            Questions? Contact us at <a href="mailto:support@ecogrid.lk" style="color:#16a34a">support@ecogrid.lk</a>
-          </p>
-        </div>
-        <div class="footer">
-          <p>© ${new Date().getFullYear()} EcoGrid · Sri Lanka's EV Charging Network</p>
-          <p><a href="#">Privacy Policy</a> · <a href="#">Terms of Service</a></p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  await mailer.sendMail({
-    from:    process.env.EMAIL_FROM || 'EcoGrid <noreply@ecogrid.lk>',
-    to:      email,
-    subject: `⚡ EcoGrid Invoice — LKR ${parseFloat(amount).toLocaleString()} — ${transactionId}`,
-    html,
-  });
-
-  console.log(`📧 Invoice sent to ${email} — TXN: ${transactionId}`);
-};
-
-module.exports = { sendInvoiceEmail };
+const nodemailer = require('nodemailer');let transporter;function getTransporter() {  if (!transporter) {    transporter = nodemailer.createTransporter({      host:   process.env.SMTP_HOST || 'smtp.gmail.com',      port:   parseInt(process.env.SMTP_PORT) || 587,      secure: false,      auth: {        user: process.env.SMTP_USER,        pass: process.env.SMTP_PASS,      },    });  }  return transporter;}const sendInvoiceEmail = async ({ email, transactionId, amount, date, stationId, vehicle }) => {  const mailer = getTransporter();  const html = `    <!DOCTYPE html>    <html>    <head>      <meta charset="UTF-8">      <style>        body{font-family:'Segoe UI',Arial,sans-serif;background:#f8fafc;margin:0;padding:0}        .wrapper{max-width:560px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)}        .header{background:linear-gradient(135deg,#16a34a,#065f46);padding:32px 40px;text-align:center}        .bolt{font-size:32px}        .brand{color:white;font-size:24px;font-weight:800}        .header p{color:rgba(255,255,255,.75);margin:8px 0 0;font-size:14px}        .body{padding:36px 40px}        .title{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:6px}        .subtitle{color:#64748b;font-size:14px;margin-bottom:28px}        .invoice-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px}        .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2e8f0}        .row:last-child{border-bottom:none;padding-top:14px}        .label{color:#64748b;font-size:13px}        .value{color:#0f172a;font-weight:600;font-size:13px}        .amount-val{color:#16a34a;font-size:20px;font-weight:800}        .badge{display:inline-flex;align-items:center;gap:6px;background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:24px}        .co2{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 20px;text-align:center;margin-bottom:20px}        .co2 .leaf{font-size:24px}        .co2 p{margin:4px 0 0;color:#15803d;font-size:13px;font-weight:500}        .footer{padding:20px 40px;background:#f8fafc;text-align:center;color:#94a3b8;font-size:12px;border-top:1px solid #e2e8f0}        .footer a{color:#16a34a;text-decoration:none}      </style>    </head>    <body>      <div class="wrapper">        <div class="header">          <div class="bolt">⚡</div>          <div class="brand">EcoGrid</div>          <p>EV Charging Receipt</p>        </div>        <div class="body">          <div class="badge">✓ Payment Successful</div>          <div class="title">Thank you for charging with EcoGrid!</div>          <div class="subtitle">Here's your invoice for this charging session.</div>          <div class="invoice-box">            <div class="row">              <span class="label">Transaction ID</span>              <span class="value" style="font-family:monospace;font-size:12px">${transactionId}</span>            </div>            <div class="row">              <span class="label">Station Node</span>              <span class="value">${stationId}</span>            </div>            <div class="row">              <span class="label">Vehicle</span>              <span class="value">${vehicle || 'N/A'}</span>            </div>            <div class="row">              <span class="label">Date &amp; Time</span>              <span class="value">${date}</span>            </div>            <div class="row">              <span class="label" style="font-weight:700;color:#0f172a">Total Charged</span>              <span class="amount-val">LKR ${parseFloat(amount).toLocaleString('en-LK', { minimumFractionDigits: 2 })}</span>            </div>          </div>          <div class="co2">            <div class="leaf">🌿</div>            <p>Every kWh charged saves ~0.85 kg of CO₂ vs petrol vehicles.<br>Thank you for choosing clean energy!</p>          </div>          <p style="color:#64748b;font-size:13px;line-height:1.6">            Questions? Contact us at <a href="mailto:support@ecogrid.lk" style="color:#16a34a">support@ecogrid.lk</a>          </p>        </div>        <div class="footer">          <p>© ${new Date().getFullYear()} EcoGrid · Sri Lanka's EV Charging Network</p>          <p><a href="#">Privacy Policy</a> · <a href="#">Terms of Service</a></p>        </div>      </div>    </body>    </html>  `;  await mailer.sendMail({    from:    process.env.EMAIL_FROM || 'EcoGrid <noreply@ecogrid.lk>',    to:      email,    subject: `⚡ EcoGrid Invoice — LKR ${parseFloat(amount).toLocaleString()} — ${transactionId}`,    html,  });  console.log(`📧 Invoice sent to ${email} — TXN: ${transactionId}`);};module.exports = { sendInvoiceEmail };

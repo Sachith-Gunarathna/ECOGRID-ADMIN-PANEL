@@ -1,56 +1,1 @@
-// make-admin.js
-// One-time script to grant admin access to a Firebase user
-// Usage:   node make-admin.js admin@ecogrid.lk
-// Usage:   node make-admin.js new@ecogrid.lk MyPassword123
-// Requires a configured .env file
-
-require('dotenv').config();
-const { auth } = require('./config/firebase');
-
-async function makeAdmin() {
-  const email    = process.argv[2];
-  let   password = process.argv[3];
-
-  if (!email) {
-    console.log('❌ Please provide the user email.');
-    console.log('Usage: node make-admin.js <user-email> [optional-password]');
-    process.exit(1);
-  }
-
-  try {
-    let user;
-    try {
-      console.log(`🔍 Looking up user: ${email}`);
-      user = await auth.getUserByEmail(email);
-      console.log('✅ User found in Firebase Auth.');
-    } catch (e) {
-      if (e.code === 'auth/user-not-found') {
-        password = password || 'Admin@123';
-        console.log(`⚠️  User not found. Creating new user with password: ${password}`);
-        user = await auth.createUser({ email, password, emailVerified: true });
-        console.log('✅ User created!');
-      } else {
-        throw e;
-      }
-    }
-
-    console.log('⏳ Setting admin: true custom claim...');
-    await auth.setCustomUserClaims(user.uid, { admin: true });
-
-    console.log(`
-🎉 Success! "${email}" is now an Admin.
-
-Log in at: http://localhost:3000
-Email:     ${email}
-Password:  ${password || '<your existing password>'}
-
-Note: The user must sign out and sign back in for the claim to take effect.
-    `);
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error:', error.message);
-    process.exit(1);
-  }
-}
-
-makeAdmin();
+require('dotenv').config();const { auth } = require('./config/firebase');async function makeAdmin() {  const email    = process.argv[2];  let   password = process.argv[3];  if (!email) {    console.log('❌ Please provide the user email.');    console.log('Usage: node make-admin.js <user-email> [optional-password]');    process.exit(1);  }  try {    let user;    try {      console.log(`🔍 Looking up user: ${email}`);      user = await auth.getUserByEmail(email);      console.log('✅ User found in Firebase Auth.');    } catch (e) {      if (e.code === 'auth/user-not-found') {        password = password || 'Admin@123';        console.log(`⚠️  User not found. Creating new user with password: ${password}`);        user = await auth.createUser({ email, password, emailVerified: true });        console.log('✅ User created!');      } else {        throw e;      }    }    console.log('⏳ Setting admin: true custom claim...');    await auth.setCustomUserClaims(user.uid, { admin: true });    console.log(`🎉 Success! "${email}" is now an Admin.Log in at: http://localhost:3000Email:     ${email}Password:  ${password || '<your existing password>'}Note: The user must sign out and sign back in for the claim to take effect.    `);    process.exit(0);  } catch (error) {    console.error('❌ Error:', error.message);    process.exit(1);  }}makeAdmin();
